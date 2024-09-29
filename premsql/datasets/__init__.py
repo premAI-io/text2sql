@@ -51,9 +51,15 @@ class Text2SQLDataset:
         num_fewshot: int | None = None,
         model_name_or_path: str | None = None,
         prompt_template: str | None = None,
+        tokenize: bool | None = False 
     ):
         return self._text2sql_dataset.setup_dataset(
-            filter_by, num_rows, num_fewshot, model_name_or_path, prompt_template
+            filter_by=filter_by,
+            num_rows=num_rows,
+            model_name_or_path=model_name_or_path,
+            tokenize=tokenize,
+            prompt_template=prompt_template,
+            num_fewshot=num_fewshot
         )
 
 

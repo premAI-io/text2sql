@@ -126,6 +126,7 @@ class SupervisedDatasetForTraining(torch.utils.data.Dataset):
         self,
         dataset: dict,
         model_name_or_path: Optional[str] = None,
+        tokenize: Optional[bool] = False, 
         hf_token: Optional[str] = None,
     ):
         assert "prompt" in dataset[0], "key prompt is required"
@@ -133,7 +134,7 @@ class SupervisedDatasetForTraining(torch.utils.data.Dataset):
 
         self.is_tokenized = False
 
-        if model_name_or_path is not None:
+        if model_name_or_path is not None and tokenize:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 pretrained_model_name_or_path=model_name_or_path,
                 padding_side="right",
@@ -165,6 +166,19 @@ class SupervisedDatasetForTraining(torch.utils.data.Dataset):
             self.labels = dataset["labels"]
             self.is_tokenized = True
 
+        elif model_name_or_path is not None and not tokenize:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                pretrained_model_name_or_path=model_name_or_path,
+                padding_side="right",
+                token=hf_token,
+            )
+            self.dataset = dataset
+            if self.tokenizer.chat_template:
+                for content in self.dataset:
+                    content["prompt"] = self.tokenizer.apply_chat_template(
+                        [{"role": "user", "content": content["prompt"]}], tokenize=False
+                    )
+                logger.info("Casted dataset with model chat template")
         else:
             self.dataset = dataset
 
@@ -232,6 +246,7 @@ class Text2SQLBaseDataset(ABC):
         num_rows: Optional[int] = None,
         num_fewshot: Optional[int] = None,
         model_name_or_path: Optional[str] = None,
+        tokenize: Optional[bool] = False,
         prompt_template: Optional[str] = BASE_TEXT2SQL_PROMPT,
     ):
         for content in self.dataset:
@@ -255,6 +270,7 @@ class Text2SQLBaseDataset(ABC):
             dataset=self.dataset,
             model_name_or_path=model_name_or_path,
             hf_token=self.hf_token,
+            tokenize=tokenize
         )
 
     def __len__(self):
@@ -288,8 +304,15 @@ class StandardDataset(Text2SQLBaseDataset):
         num_fewshot: int | None = None,
         model_name_or_path: str | None = None,
         prompt_template: str | None = None,
+        tokenize: bool | None = False 
     ):
         logger.info("Setting up Dataset")
         return super().setup_dataset(
-            filter_by, num_rows, num_fewshot, model_name_or_path, prompt_template
+            filter_by=filter_by,
+            num_rows=num_rows,
+            model_name_or_path=model_name_or_path,
+            tokenize=tokenize,
+            prompt_template=prompt_template,
+            num_fewshot=num_fewshot
         )
+

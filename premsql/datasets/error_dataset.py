@@ -29,20 +29,22 @@ class ErrorDatasetInstance(Text2SQLBaseInstance):
         ):
             assert "error" in content, "key error is not present"
             error_msg = content["error"]
-            prompt = content["prompt"].split("# SQL:")[0].strip()
-            prediction = content["generated"]
-            error_prompt = prompt_template.format(
-                existing_prompt=prompt, sql=prediction, error_msg=error_msg
-            )
-            data_to_return.append(
-                {
-                    "db_id": content["db_id"],
-                    "question": content["question"],
-                    "SQL": content["SQL"],
-                    "prompt": error_prompt,
-                    "db_path": content["db_path"],
-                }
-            )
+
+            if error_msg is not None:
+                prompt = content["prompt"].split("# SQL:")[0].strip()
+                prediction = content["generated"]
+                error_prompt = prompt_template.format(
+                    existing_prompt=prompt, sql=prediction, error_msg=error_msg
+                )
+                data_to_return.append(
+                    {
+                        "db_id": content["db_id"],
+                        "question": content["question"],
+                        "SQL": content["SQL"],
+                        "prompt": error_prompt,
+                        "db_path": content["db_path"],
+                    }
+                )
         return data_to_return
 
 
