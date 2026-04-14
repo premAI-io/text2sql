@@ -7,11 +7,12 @@ def setup_console_logger(name, level=logging.INFO):
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    logger.addHandler(console_handler)
+    if not logger.handlers:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+    logger.propagate = False
 
     return logger

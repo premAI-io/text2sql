@@ -133,7 +133,7 @@ class AgentOutput(BaseModel):
 
     session_name: str
     question: str
-    db_connection_uri: str
+    db_connection_uri: Optional[str] = None
     route_taken: Literal["plot", "analyse", "query", "followup"]
     input_dataframe: Optional[Dict] = None
     output_dataframe: Optional[Dict] = None

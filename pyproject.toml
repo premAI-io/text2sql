@@ -6,11 +6,11 @@ authors = ["Anindyadeep <proanindyadeep@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10,<3.13"
 datasets = "^2.20.0"
 einops = "^0.8.0"
 black = "^24.4.2"
-fastapi = "^0.112.0"
+fastapi = ">=0.115.0"
 huggingface-hub = "^0.24.5"
 isort = "^5.13.2"
 numpy = "^1.26.3"
@@ -28,9 +28,11 @@ drf-yasg = "^1.21.8"
 func_timeout = "^4.3.5"
 matplotlib = "^3.9.2"
 pillow = ">=8,<11"
-uvicorn = "^0.32.0"
+uvicorn = ">=0.32.0"
 streamlit = "^1.40.0"
 kagglehub = "^0.3.3"
+httpx = ">=0.27.0"
+starlette = ">=0.41.0"
 
 [tool.poetry.extras]
 mac = ["mlx", "mlx-lm"]

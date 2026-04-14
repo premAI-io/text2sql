@@ -8,6 +8,7 @@ from premsql.agents.base import ChartPlotWorkerBase, ChartPlotWorkerOutput
 from premsql.agents.baseline.prompts import BASELINE_CHART_WORKER_PROMPT_TEMPLATE
 from premsql.agents.tools.plot.base import BasePlotTool
 from premsql.agents.utils import convert_df_to_dict
+from premsql.security import ensure_expected_keys_only, parse_structured_output
 
 logger = setup_console_logger("[PLOT-WORKER]")
 
@@ -39,8 +40,12 @@ class BaseLinePlotWorker(ChartPlotWorkerBase):
                 max_new_tokens=max_new_tokens,
                 postprocess=False,
             )
-            to_plot = to_plot.replace("null", "None")
-            plot_config = eval(to_plot)
+            plot_config = ensure_expected_keys_only(
+                parse_structured_output(
+                    to_plot, expected_keys={"x", "y", "plot_type"}
+                ),
+                expected_keys={"x", "y", "plot_type"},
+            )
             fig = self.plot_tool.run(data=input_dataframe, plot_config=plot_config)
             logger.info(f"Plot config: {plot_config}")
 
@@ -48,7 +53,7 @@ class BaseLinePlotWorker(ChartPlotWorkerBase):
                 output = self.plot_tool.convert_image_to_base64(
                     self.plot_tool.convert_plot_to_image(fig=fig)
                 )
-                logger.info("Done base64 conversion")
+                logger.info("Plot image generated successfully")
             else:
                 output = None
 
@@ -69,6 +74,7 @@ class BaseLinePlotWorker(ChartPlotWorkerBase):
 
         except Exception as e:
             error_message = f"Error during plot generation: {str(e)}"
+            logger.error(error_message)
             return ChartPlotWorkerOutput(
                 question=question,
                 input_dataframe=convert_df_to_dict(input_dataframe),

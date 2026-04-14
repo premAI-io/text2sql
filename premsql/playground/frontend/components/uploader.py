@@ -21,11 +21,16 @@ baseline = BaseLineAgent(
     plot_tool=SimpleMatplotlibTool()            # Matplotlib Tool which will be used by plotter worker
 )
 
-agent_server = AgentServer(agent=baseline, port={port})
+agent_server = AgentServer(
+    agent=baseline,
+    port={port},
+    api_token=os.environ.get("PREMSQL_API_TOKEN")
+)
 agent_server.launch()
 """
 
 STARTER_CODE_FILE_MLX = """
+import os
 from premsql.playground import AgentServer
 from premsql.agents import BaseLineAgent
 from premsql.generators import Text2SQLGeneratorMLX
@@ -42,6 +47,7 @@ analyser_plotter_model = Text2SQLGeneratorMLX(
 
 
 STARTER_CODE_FILE_OLLAMA = """
+import os
 from premsql.playground import AgentServer
 from premsql.agents import BaseLineAgent
 from premsql.generators import Text2SQLGeneratorOllama
@@ -63,6 +69,7 @@ analyser_plotter_model = Text2SQLGeneratorOllama(
 
 
 STARTER_CODE_FILE_HF = """
+import os
 from premsql.playground import AgentServer
 from premsql.agents import BaseLineAgent
 from premsql.generators import Text2SQLGeneratorHF
@@ -192,9 +199,11 @@ class UploadComponent:
                     if submit:
                         if not session_name:
                             st.error("Please enter a session name")
-                        
+                            return None, None
+
                         if not _is_valid_kaggle_id(kaggle_id):
                             st.error("Invalid Kaggle Id")
+                            return None, None
                         
                         try:
                             with st.spinner(text="Downloading from Kaggle"):
@@ -229,9 +238,11 @@ class UploadComponent:
                     if submit:
                         if not session_name:
                             st.error("Please enter a session name")
-                        
+                            return None, None
+
                         if not uploaded_files:
                             st.error("Please upload at least one CSV file")
+                            return None, None
                         
                         try:
                             with st.spinner(text="Processing CSV files"):

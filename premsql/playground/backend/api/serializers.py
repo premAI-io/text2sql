@@ -4,7 +4,7 @@ from rest_framework import serializers
 class AgentOutputSerializer(serializers.Serializer):
     session_name = serializers.CharField()
     question = serializers.CharField()
-    db_connection_uri = serializers.CharField()
+    # db_connection_uri removed - sensitive data, never exposed to clients
     route_taken = serializers.ChoiceField(
         choices=["plot", "analyse", "query", "followup"]
     )
@@ -28,13 +28,12 @@ class SessionCreationRequestSerializer(serializers.Serializer):
 
 
 class SessionCreationResponseSerializer(serializers.Serializer):
-    status_code = serializers.ChoiceField(choices=[200, 500])
+    status_code = serializers.ChoiceField(choices=[200, 401, 500])
     status = serializers.ChoiceField(choices=["success", "error"])
 
     session_id = serializers.IntegerField(allow_null=True)
     session_name = serializers.CharField(allow_null=True)
-    db_connection_uri = serializers.CharField(allow_null=True)
-    session_db_path = serializers.CharField(allow_null=True)
+    # db_connection_uri and session_db_path removed - sensitive, never exposed
     created_at = serializers.DateTimeField(allow_null=True)
     error_message = serializers.CharField(allow_null=True)
 
@@ -44,12 +43,11 @@ class SessionSummarySerializer(serializers.Serializer):
     session_name = serializers.CharField(max_length=255)
     created_at = serializers.DateTimeField()
     base_url = serializers.CharField()
-    db_connection_uri = serializers.CharField()
-    session_db_path = serializers.CharField()
+    # db_connection_uri and session_db_path removed - sensitive, never exposed
 
 
 class SessionListResponseSerializer(serializers.Serializer):
-    status_code = serializers.ChoiceField(choices=[200, 500])
+    status_code = serializers.ChoiceField(choices=[200, 401, 404, 500])
     status = serializers.ChoiceField(choices=["success", "error"])
     sessions = SessionSummarySerializer(many=True, allow_null=True)
     total_count = serializers.IntegerField(allow_null=True)
@@ -60,7 +58,7 @@ class SessionListResponseSerializer(serializers.Serializer):
 
 class SessionDeletionResponse(serializers.Serializer):
     session_name = serializers.CharField(max_length=255)
-    status_code = serializers.ChoiceField(choices=[200, 404, 500])
+    status_code = serializers.ChoiceField(choices=[200, 401, 404, 500])
     status = serializers.ChoiceField(choices=["success", "error"])
     error_message = serializers.CharField(allow_null=True)
 
@@ -72,11 +70,11 @@ class CompletionCreationRequestSerializer(serializers.Serializer):
 
 
 class CompletionCreationResponseSerializer(serializers.Serializer):
-    status_code = serializers.ChoiceField(choices=[200, 500])
+    status_code = serializers.ChoiceField(choices=[200, 401, 404, 500])
     status = serializers.ChoiceField(choices=["success", "error"])
     message_id = serializers.IntegerField(allow_null=True)
     session_name = serializers.CharField(allow_null=True)
-    message = message = AgentOutputSerializer(allow_null=True)
+    message = AgentOutputSerializer(allow_null=True)
     created_at = serializers.DateTimeField(allow_null=True)
     question = serializers.CharField(allow_null=True)
     error_message = serializers.CharField(allow_null=True)
@@ -85,16 +83,19 @@ class CompletionCreationResponseSerializer(serializers.Serializer):
 class CompletionSummarySerializer(serializers.Serializer):
     message_id = serializers.IntegerField()
     session_name = serializers.CharField()
-    base_url = serializers.CharField()
+    # base_url removed - not needed in chat history, already known from session
     created_at = serializers.DateTimeField()
     question = serializers.CharField(allow_null=True)
+    message = AgentOutputSerializer(allow_null=True)
 
 
 class CompletionListResponseSerializer(serializers.Serializer):
-    status_code = serializers.ChoiceField(choices=[200, 500])
+    status_code = serializers.ChoiceField(choices=[200, 401, 404, 500])
     status = serializers.ChoiceField(choices=["success", "error"])
     completions = CompletionSummarySerializer(many=True, allow_null=True)
     total_count = serializers.IntegerField(allow_null=True)
+    page = serializers.IntegerField(allow_null=True)
+    page_size = serializers.IntegerField(allow_null=True)
     error_message = serializers.CharField(allow_null=True)
 
 

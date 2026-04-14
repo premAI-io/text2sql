@@ -4,9 +4,13 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
-import sqlparse
 from tqdm.auto import tqdm
 from platformdirs import user_cache_dir
+
+try:
+    import sqlparse
+except ImportError:  # pragma: no cover - fallback exercised in minimal envs
+    sqlparse = None
 
 from premsql.evaluator.base import BaseExecutor
 from premsql.logger import setup_console_logger
@@ -98,9 +102,6 @@ class Text2SQLGeneratorBase(ABC):
     def postprocess(self, output_string: str):
         sql_start_keywords = [
             r"\bSELECT\b",
-            r"\bINSERT\b",
-            r"\bUPDATE\b",
-            r"\bDELETE\b",
             r"\bWITH\b",
         ]
 
@@ -112,7 +113,10 @@ class Text2SQLGeneratorBase(ABC):
         else:
             sql_statement = output_string
 
-        return sqlparse.format(sql_statement.split("# SQL:")[-1].strip())
+        sql_statement = sql_statement.split("# SQL:")[-1].strip()
+        if sqlparse is not None:
+            return sqlparse.format(sql_statement)
+        return sql_statement
 
     def load_results_from_folder(self):
         item_names = [item.name for item in self.experiment_path.iterdir()]

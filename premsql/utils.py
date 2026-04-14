@@ -78,8 +78,10 @@ def sqlite_schema_prompt(db_path: str) -> str:
         table_name = table[0]
         if table_name == "sqlite_sequence":
             continue
+        # Use parameterized query instead of f-string for safety
         cursor.execute(
-            f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}';"
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?;",
+            (table_name,)
         )
         create_table_sql = cursor.fetchone()
         if create_table_sql:

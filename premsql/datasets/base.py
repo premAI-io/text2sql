@@ -59,8 +59,10 @@ class Text2SQLBaseInstance:
             table_name = table[0]
             if table_name == "sqlite_sequence":
                 continue
+            # Use parameterized query instead of f-string for safety
             cursor.execute(
-                f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}';"
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?;",
+                (table_name,)
             )
             create_table_sql = cursor.fetchone()
             if create_table_sql:
@@ -115,7 +117,18 @@ class SupervisedDatasetForTraining(torch.utils.data.Dataset):
     @classmethod
     def load_from_pth(cls, dataset_path: Union[str, Path]):
         dataset_path = str(dataset_path)
-        dataset_dict = torch.load(dataset_path)
+        # Security: Use weights_only=True to prevent malicious pickle deserialization
+        # This is supported in PyTorch 2.0+
+        try:
+            dataset_dict = torch.load(dataset_path, weights_only=True)
+        except TypeError:
+            # PyTorch < 2.0 fallback - warn about security risk
+            import warnings
+            warnings.warn(
+                "Loading dataset with legacy torch.load. "
+                "Consider upgrading to PyTorch 2.0+ for safer deserialization."
+            )
+            dataset_dict = torch.load(dataset_path)
 
         assert "input_ids" in dataset_dict[0], "input_ids is required"
         assert "labels" in dataset_dict[0], "labels is required"

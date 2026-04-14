@@ -1,7 +1,5 @@
-import subprocess
 from typing import Optional
 
-import requests
 from api.models import Completions, Session
 from api.pydantic_models import (
     CompletionCreationRequest,
@@ -20,9 +18,15 @@ from django.db import transaction
 
 from premsql.logger import setup_console_logger
 from premsql.agents.base import AgentOutput
-from premsql.agents.memory import AgentInteractionMemory
 from premsql.playground import InferenceServerAPIClient
-from premsql.playground.backend.api.utils import stop_server_on_port
+from premsql.security import (
+    SecurityValidationError,
+    get_api_token,
+    mask_db_connection_uri,
+    redact_agent_output_payload,
+    safe_error_message,
+    validate_session_name,
+)
 
 logger = setup_console_logger("[SESSION-MANAGER]")
 
@@ -33,43 +37,65 @@ logger = setup_console_logger("[SESSION-MANAGER]")
 
 class SessionManageService:
     def __init__(self) -> None:
-        self.client = InferenceServerAPIClient()
+        self.client = InferenceServerAPIClient(api_token=get_api_token())
 
     def create_session(
         self, request: SessionCreationRequest
     ) -> SessionCreationResponse:
-        response = self.client.get_session_info(base_url=request.base_url)
+        try:
+            response = self.client.get_session_info(base_url=request.base_url)
+        except Exception as exc:
+            logger.error(safe_error_message(exc, debug_mode=False))
+            return SessionCreationResponse(
+                status_code=500,
+                status="error",
+                error_message="Unable to contact the inference server",
+            )
+
         if response.get("status") == 500:
             return SessionCreationResponse(
                 status_code=500,
                 status="error",
-                error_message="Can not start session, internal server error. Try Again!",
+                error_message="Unable to start the session",
             )
 
         try:
+            session_name = validate_session_name(response["session_name"])
+            # If session with same name exists, delete it first
+            existing_session = Session.objects.filter(session_name=session_name).first()
+            if existing_session:
+                Completions.objects.filter(session_name=session_name).delete()
+                existing_session.delete()
+                logger.info(f"Deleted existing session: {session_name}")
+
             session = Session.objects.create(
-                session_name=response["session_name"],
-                db_connection_uri=response["db_connection_uri"],
-                created_at=response["created_at"],
-                base_url=response["base_url"],
-                session_db_path=response["session_db_path"],
+                session_name=session_name,
+                db_connection_uri=mask_db_connection_uri(response.get("db_connection_uri"))
+                or "***",
+                base_url=request.base_url,
+                session_db_path="",
             )
-            logger.info(f"Successfully created session: {response['session_name']}")
+            logger.info(f"Successfully created session: {session_name}")
             return SessionCreationResponse(
                 status_code=200,
                 status="success",
                 session_id=session.session_id,
                 session_name=session.session_name,
-                db_connection_uri=response["db_connection_uri"],
-                session_db_path=response["session_db_path"],
                 created_at=session.created_at,
                 error_message=None,
             )
-        except Exception as e:
+        except SecurityValidationError:
             return SessionCreationResponse(
                 status_code=500,
                 status="error",
-                error_message=f"Can not start session. {e}",
+                error_message="Inference server returned an invalid session identifier",
+            )
+        except Exception as exc:
+            logger.error(safe_error_message(exc, debug_mode=False))
+            return SessionCreationResponse(
+                status_code=500,
+                status="error",
+                error_message="Unable to create the session",
             )
 
     def get_session(self, session_name: str) -> Optional[Session]:
@@ -89,8 +115,6 @@ class SessionManageService:
                     session_name=session.session_name,
                     created_at=session.created_at,
                     base_url=session.base_url,
-                    db_connection_uri=session.db_connection_uri,
-                    session_db_path=session.session_db_path,
                 )
                 for session in page_obj
             ]
@@ -98,19 +122,20 @@ class SessionManageService:
                 status="success",
                 status_code=200,
                 sessions=session_summaries,
-                total_count=len(session_summaries),
+                total_count=paginator.count,
                 page=page,
                 page_size=page_size,
             )
-        except Exception as e:
+        except Exception as exc:
+            logger.error(safe_error_message(exc, debug_mode=False))
             return SessionListResponse(
                 status="error",
                 status_code=500,
-                session_summaries=None,
+                sessions=None,
                 total_count=0,
                 page=page,
                 page_size=page_size,
-                error_message=f"Error listing sessions: {e}",
+                error_message="Unable to list sessions",
             )
 
     def delete_session(self, session_name: str):
@@ -118,23 +143,13 @@ class SessionManageService:
             with transaction.atomic():
                 session = Session.objects.get(session_name=session_name)
                 try:
-                    running_port = int(session.base_url.split(":")[1])
-                    stop_server_on_port(port=running_port)
-                except Exception as e:
-                    logger.info(
-                        "process killing failed, please shut down inference server manually"
-                    )
-                    pass
+                    self.client.delete_session(base_url=session.base_url)
+                except Exception:
+                    logger.warning("Unable to notify inference server during session deletion")
 
-                # Proceed with deletion
                 Completions.objects.filter(session_name=session_name).delete()
                 session.delete()
                 logger.info("Deleted all the chats")
-                agent_memory = AgentInteractionMemory(
-                    session_name=session_name, db_path=session.session_db_path
-                )
-                logger.info("Deleted the session registered inside PremSQL Agent")
-                agent_memory.delete_table()
                 return SessionDeleteResponse(
                     session_name=session_name,
                     status_code=200,
@@ -148,18 +163,19 @@ class SessionManageService:
                 status="error",
                 error_message="Session does not exist",
             )
-        except Exception as e:
+        except Exception as exc:
+            logger.error(safe_error_message(exc, debug_mode=False))
             return SessionDeleteResponse(
                 session_name=session_name,
                 status_code=500,
                 status="error",
-                error_message=f"Session does not exist: {e}",
+                error_message="Unable to delete the session",
             )
 
 
 class CompletionService:
     def __init__(self) -> None:
-        self.client = InferenceServerAPIClient()
+        self.client = InferenceServerAPIClient(api_token=get_api_token())
 
     def completion(
         self, request: CompletionCreationRequest
@@ -175,34 +191,38 @@ class CompletionService:
             )
 
         try:
-            # Small Hack ;_)
-            base_url = session.base_url
-            base_url = f"http://{base_url}"
             session_inference_response = self.client.post_completion(
-                base_url=base_url, question=request.question
+                base_url=session.base_url, question=request.question
             )
-        except Exception as e:
-            logger.error(f"Unexpected error during completion: {str(e)}")
+        except Exception as exc:
+            logger.error(safe_error_message(exc, debug_mode=False))
             return CompletionCreationResponse(
                 status_code=500,
                 status="error",
                 session_name=session.session_name,
-                error_message="An unexpected error occurred",
+                error_message="Unable to process the completion request",
             )
 
         try:
+            message_payload = redact_agent_output_payload(
+                session_inference_response.get("message")
+            )
+            if message_payload is None:
+                raise ValueError("Completion response did not include a message payload")
+
+            agent_output = AgentOutput(**message_payload)
             chat = Completions.objects.create(
                 session=session,
                 session_name=session.session_name,
                 question=request.question,
                 message_id=session_inference_response.get("message_id"),
-                created_at=session_inference_response.get("message").get("created_at"),
+                created_at=agent_output.created_at,
+                agent_output=message_payload,
             )
 
             logger.info(
                 f"Chat completion created successfully for session: {session.session_name}"
             )
-            agent_output = AgentOutput(**session_inference_response.get("message"))
             return CompletionCreationResponse(
                 status_code=200,
                 status="success",
@@ -213,13 +233,13 @@ class CompletionService:
                 message=agent_output,
             )
 
-        except Exception as e:
-            logger.error(f"Error saving completion: {str(e)}")
+        except Exception as exc:
+            logger.error(safe_error_message(exc, debug_mode=False))
             return CompletionCreationResponse(
                 status_code=500,
                 status="error",
                 session_name=session.session_name,
-                error_message=f"Completion successful, but failed to save: {e}",
+                error_message="Completion succeeded but could not be stored",
             )
 
     def chat_history(
@@ -249,9 +269,13 @@ class CompletionService:
                 CompletionSummary(
                     message_id=completion.message_id,
                     session_name=completion.session_name,
-                    base_url=completion.session.base_url,
                     created_at=completion.created_at,
                     question=completion.question,
+                    message=(
+                        AgentOutput(**completion.agent_output)
+                        if completion.agent_output is not None
+                        else None
+                    ),
                 )
                 for completion in page_obj
             ]
@@ -264,7 +288,8 @@ class CompletionService:
                 page=page,
                 page_size=page_size,
             )
-        except Exception as e:
+        except Exception as exc:
+            logger.error(safe_error_message(exc, debug_mode=False))
             return CompletionListResponse(
                 status="error",
                 status_code=500,
@@ -272,5 +297,5 @@ class CompletionService:
                 total_count=0,
                 page=page,
                 page_size=page_size,
-                error_message=f"Error fetching chat history: {str(e)}",
+                error_message="Unable to fetch chat history",
             )

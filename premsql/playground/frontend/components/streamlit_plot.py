@@ -1,9 +1,9 @@
-import traceback
 from typing import Dict, Any
 import pandas as pd
-import streamlit as st 
+import streamlit as st
 from premsql.logger import setup_console_logger
 from premsql.agents.tools.plot.base import BasePlotTool
+from premsql.security import safe_error_message
 
 logger = setup_console_logger("[STREAMLIT-TOOL]")
 
@@ -27,12 +27,11 @@ class StreamlitPlotTool(BasePlotTool):
 
             st.markdown(f"**{plot_type.capitalize()} Plot: {x} vs {y}**")
             return self.plot_functions[plot_type](data, x, y)
-        except Exception as e:
-            error_msg = f"Error creating plot: {str(e)}"
-            stack_trace = traceback.format_exc()
-            logger.error(f"{error_msg}\n{stack_trace}")
-            logger.error(f"Error creating plot: {str(e)}")
-            st.error(f"Error creating plot: {str(e)}")
+        except Exception as exc:
+            # Use safe error message (whitelist approach)
+            safe_msg = safe_error_message(exc, debug_mode=False)
+            logger.error(f"Plot error: {safe_msg}")
+            st.error(safe_msg)
             return None
 
     def _validate_config(self, df: pd.DataFrame, plot_config: Dict[str, str]) -> None:

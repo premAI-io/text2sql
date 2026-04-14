@@ -1,6 +1,8 @@
 import io
 from typing import Callable, Dict
 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for server mode
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.axes import Axes
@@ -54,14 +56,17 @@ class SimpleMatplotlibTool(BasePlotTool):
                 f"Missing required keys in plot_config: {', '.join(missing_keys)}"
             )
 
+        if plot_config["plot_type"] not in self.plot_functions:
+            raise ValueError(f"Unsupported plot type: {plot_config['plot_type']}")
+
         if plot_config["x"] not in df.columns:
             raise ValueError(f"Column '{plot_config['x']}' not found in DataFrame")
 
+        if plot_config["plot_type"] == "histogram":
+            return
+
         if plot_config["y"] not in df.columns:
             raise ValueError(f"Column '{plot_config['y']}' not found in DataFrame")
-
-        if plot_config["plot_type"] not in self.plot_functions:
-            raise ValueError(f"Unsupported plot type: {plot_config['plot_type']}")
 
     def _area_plot(self, df: pd.DataFrame, x: str, y: str, ax: Axes) -> None:
         ax.fill_between(df[x], df[y])

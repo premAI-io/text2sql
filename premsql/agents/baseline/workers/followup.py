@@ -7,6 +7,7 @@ from premsql.logger import setup_console_logger
 from premsql.agents.base import WorkerBase
 from premsql.agents.baseline.prompts import BASELINE_FOLLOWUP_WORKER_PROMPT
 from premsql.agents.models import ExitWorkerOutput, FollowupWorkerOutput
+from premsql.security import ensure_expected_keys_only, parse_structured_output
 
 logger = setup_console_logger("[BASELINE-FOLLOWUP-WORKER]")
 
@@ -78,7 +79,13 @@ class BaseLineFollowupWorker(WorkerBase):
                 max_new_tokens=max_new_tokens,
                 postprocess=False,
             )
-            result = eval(result.replace("null", "None"))
+            result = ensure_expected_keys_only(
+                parse_structured_output(
+                    result,
+                    expected_keys={"alternate_decision", "suggestion"},
+                ),
+                expected_keys={"alternate_decision", "suggestion"},
+            )
             error_from_model = None
             assert "alternate_decision" in result
             assert "suggestion" in result

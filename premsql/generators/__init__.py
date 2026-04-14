@@ -1,7 +1,30 @@
-from premsql.generators.huggingface import Text2SQLGeneratorHF
-from premsql.generators.openai import Text2SQLGeneratorOpenAI
-from premsql.generators.premai import Text2SQLGeneratorPremAI
-from premsql.generators.mlx import Text2SQLGeneratorMLX
-from premsql.generators.ollama_model import Text2SQLGeneratorOllama
+from importlib import import_module
 
-__all__ = ["Text2SQLGeneratorHF", "Text2SQLGeneratorPremAI", "Text2SQLGeneratorOpenAI", "Text2SQLGeneratorMLX", "Text2SQLGeneratorOllama"]
+__all__ = [
+    "Text2SQLGeneratorHF",
+    "Text2SQLGeneratorPremAI",
+    "Text2SQLGeneratorOpenAI",
+    "Text2SQLGeneratorMLX",
+    "Text2SQLGeneratorOllama",
+    "Text2SQLGeneratorVLLM",
+    "Text2SQLGeneratorOpenAICompatible",
+]
+
+
+def __getattr__(name):
+    mapping = {
+        "Text2SQLGeneratorHF": ("premsql.generators.huggingface", "Text2SQLGeneratorHF"),
+        "Text2SQLGeneratorPremAI": ("premsql.generators.premai", "Text2SQLGeneratorPremAI"),
+        "Text2SQLGeneratorOpenAI": ("premsql.generators.openai", "Text2SQLGeneratorOpenAI"),
+        "Text2SQLGeneratorMLX": ("premsql.generators.mlx", "Text2SQLGeneratorMLX"),
+        "Text2SQLGeneratorOllama": ("premsql.generators.ollama_model", "Text2SQLGeneratorOllama"),
+        "Text2SQLGeneratorVLLM": ("premsql.generators.vllm", "Text2SQLGeneratorVLLM"),
+        "Text2SQLGeneratorOpenAICompatible": (
+            "premsql.generators.openai_compatible",
+            "Text2SQLGeneratorOpenAICompatible",
+        ),
+    }
+    if name not in mapping:
+        raise AttributeError(f"module 'premsql.generators' has no attribute {name!r}")
+    module_name, attr_name = mapping[name]
+    return getattr(import_module(module_name), attr_name)

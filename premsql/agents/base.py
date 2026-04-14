@@ -158,13 +158,14 @@ class AgentBase(ABC):
         question: str,
         input_dataframe: Optional[dict] = None,
         server_mode: Optional[bool] = False,
+        generate_plot_image: Optional[bool] = True,
     ) -> Union[ExitWorkerOutput, AgentOutput]:
         if server_mode:
             kwargs = self.route_worker_kwargs.get("plot", None)
             kwargs = (
-                {"plot_image": False}
+                {"plot_image": generate_plot_image}
                 if kwargs is None
-                else {**kwargs, "plot_image": False}
+                else {**kwargs, "plot_image": generate_plot_image}
             )
             self.route_worker_kwargs["plot"] = kwargs
 

@@ -4,6 +4,7 @@ from typing import Union
 from langchain_community.utilities.sql_database import SQLDatabase
 
 from premsql.executors.base import BaseExecutor
+from premsql.security import enforce_read_only_sql
 from premsql.utils import convert_sqlite_path_to_dsn
 
 
@@ -17,8 +18,9 @@ class ExecutorUsingLangChain(BaseExecutor):
         else:
             db = dsn_or_db_path
 
+        safe_sql = enforce_read_only_sql(sql)
         start_time = time.time()
-        response = db.run_no_throw(sql)
+        response = db.run_no_throw(safe_sql)
         end_time = time.time()
 
         error = response if response.startswith("Error") else None

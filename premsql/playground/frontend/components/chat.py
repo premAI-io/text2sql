@@ -4,7 +4,6 @@ from premsql.playground.backend.backend_client import BackendAPIClient
 from premsql.playground.inference_server.api_client import InferenceServerAPIClient
 from premsql.playground.backend.api.pydantic_models import CompletionCreationRequest
 from premsql.playground.frontend.components.streamlit_plot import StreamlitPlotTool
-from premsql.agents.memory import AgentInteractionMemory
 from premsql.agents.utils import convert_exit_output_to_agent_output
 from premsql.agents.models import ExitWorkerOutput, AgentOutput
 from premsql.logger import setup_console_logger
@@ -58,27 +57,35 @@ class ChatComponent:
         )
         if session_info.status_code == 500:
             st.error(f"Failed to render chat History for session: {session_name}")
+            return
+        if not session_info.sessions:
+            st.error(f"Session not found: {session_name}")
+            return
 
         session = session_info.sessions[0]
-        session_db_path = session.session_db_path
         base_url = session.base_url
-        # TODO: Need to understand how can I start the session
-
-        history = AgentInteractionMemory(
-            session_name=session_name, db_path=session_db_path
+        history_response = self.backend_client.get_chat_history(
+            session_name=session_name,
+            page=1,
+            page_size=100,
         )
-
-        messages = history.generate_messages_from_session(session_name=session_name, server_mode=True)
+        if history_response.status_code not in (200, 404):
+            st.error("Failed to load chat history for this session.")
+            return
+        messages = history_response.completions or []
         if not messages:
             st.warning("No chat history available for this session.")
         else:
-            for message in messages:
-                with st.chat_message("user"): st.markdown(message.question)
+            for completion in messages:
+                with st.chat_message("user"):
+                    st.markdown(completion.question or "")
                 with st.chat_message("assistant"):
-                    self._streamlit_chat_output(message=message)
-                        
+                    if completion.message:
+                        self._streamlit_chat_output(message=completion.message)
+                    else:
+                        st.warning("Message content is unavailable for this chat entry.")
+                         
         
-        base_url = f"http://{base_url}" if not base_url.startswith("http://") else base_url
         is_session_online_status = self.inference_client.is_online(base_url=base_url)
         if is_session_online_status != 200:
             st.divider()
@@ -98,9 +105,7 @@ class ChatComponent:
                             )
                         )
                         if response.status_code == 200:
-                            self._streamlit_chat_output(
-                                message=history.get_by_message_id(message_id=response.message_id)
-                            )
+                            self._streamlit_chat_output(message=response.message)
                         else:
                             st.error("Something went wrong. Try again")
 

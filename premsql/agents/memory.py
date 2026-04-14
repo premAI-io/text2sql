@@ -1,12 +1,11 @@
 import os
-import tempfile
 import sqlite3
-from platformdirs import user_cache_dir
 from typing import List, Literal, Optional
 
 from premsql.logger import setup_console_logger
 from premsql.agents.models import ExitWorkerOutput
 from premsql.agents.utils import convert_exit_output_to_agent_output
+from premsql.security import quote_sqlite_identifier, validate_session_name
 
 logger = setup_console_logger("[PIPELINE-MEMORY]")
 
@@ -14,7 +13,7 @@ logger = setup_console_logger("[PIPELINE-MEMORY]")
 
 class AgentInteractionMemory:
     def __init__(self, session_name: str, db_path: Optional[str] = None):
-        self.session_name = session_name
+        self.session_name = validate_session_name(session_name)
         self.db_path = db_path or os.path.join(
             os.getcwd(), "premsql", "premsql_pipeline_memory.db"
         )
@@ -23,6 +22,10 @@ class AgentInteractionMemory:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
         self.create_table_if_not_exists()
+
+    @property
+    def table_name(self) -> str:
+        return quote_sqlite_identifier(self.session_name)
 
 
     def list_sessions(self) -> List[str]:
@@ -35,7 +38,7 @@ class AgentInteractionMemory:
         cursor = self.conn.cursor()
         cursor.execute(
             f"""
-        CREATE TABLE IF NOT EXISTS {self.session_name} (
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
             message_id INTEGER PRIMARY KEY AUTOINCREMENT,
             question TEXT,
             db_connection_uri TEXT,
@@ -71,7 +74,7 @@ class AgentInteractionMemory:
         order: Optional[Literal["DESC", "ASC"]] = "DESC",
     ) -> List[tuple[int, ExitWorkerOutput]]:
         cursor = self.conn.cursor()
-        query = f"SELECT * FROM {self.session_name} ORDER BY message_id {order}"
+        query = f"SELECT * FROM {self.table_name} ORDER BY message_id {order}"
         if limit is not None:
             query += " LIMIT ?"
             cursor.execute(query, (limit,))
@@ -85,7 +88,7 @@ class AgentInteractionMemory:
 
     def get_latest_message_id(self) -> Optional[int]:
         cursor = self.conn.cursor()
-        query = f"SELECT message_id FROM {self.session_name} ORDER BY message_id DESC LIMIT 1"
+        query = f"SELECT message_id FROM {self.table_name} ORDER BY message_id DESC LIMIT 1"
         cursor.execute(query)
         row = cursor.fetchone()
         return row[0] if row else None
@@ -93,9 +96,10 @@ class AgentInteractionMemory:
     def generate_messages_from_session(
             self, session_name: str, limit: int = 100, server_mode: bool=False
         ):
+        validated_session_name = quote_sqlite_identifier(validate_session_name(session_name))
         cursor = self.conn.cursor()
-        query = f"SELECT * FROM {session_name} ORDER BY message_id ASC LIMIT {limit}"
-        cursor.execute(query)
+        query = f"SELECT * FROM {validated_session_name} ORDER BY message_id ASC LIMIT ?"
+        cursor.execute(query, (limit,))
         rows = cursor.fetchall()
         for row in rows:
             yield self._row_to_exit_worker_output(row=row) if server_mode == False else convert_exit_output_to_agent_output(
@@ -104,7 +108,7 @@ class AgentInteractionMemory:
 
     def get_by_message_id(self, message_id: int) -> Optional[dict]:
         cursor = self.conn.cursor()
-        query = f"SELECT * FROM {self.session_name} WHERE message_id = ?"
+        query = f"SELECT * FROM {self.table_name} WHERE message_id = ?"
         cursor.execute(query, (message_id,))
         row = cursor.fetchone()
         if row is None:
@@ -115,7 +119,7 @@ class AgentInteractionMemory:
         cursor = self.conn.cursor()
         cursor.execute(
             f"""
-        INSERT INTO {self.session_name} (
+        INSERT INTO {self.table_name} (
             question, db_connection_uri, route_taken, sql_string, sql_reasoning,
             sql_input_dataframe, sql_output_dataframe, error_from_sql_worker,
             analysis, analysis_reasoning, analysis_input_dataframe,
@@ -133,7 +137,7 @@ class AgentInteractionMemory:
     def delete_table(self):
         cursor = self.conn.cursor()
         try:
-            cursor.execute(f"DROP TABLE IF EXISTS {self.session_name}")
+            cursor.execute(f"DROP TABLE IF EXISTS {self.table_name}")
             self.conn.commit()
             logger.info(f"Table '{self.session_name}' has been deleted.")
         except sqlite3.Error as e:
@@ -222,7 +226,7 @@ class AgentInteractionMemory:
 
     def clear(self):
         cursor = self.conn.cursor()
-        cursor.execute(f"DELETE FROM {self.session_name}")
+        cursor.execute(f"DELETE FROM {self.table_name}")
         self.conn.commit()
 
     def close(self):
@@ -234,7 +238,7 @@ class AgentInteractionMemory:
     def delete_table(self):
         cursor = self.conn.cursor()
         try:
-            cursor.execute(f"DROP TABLE IF EXISTS {self.session_name}")
+            cursor.execute(f"DROP TABLE IF EXISTS {self.table_name}")
             self.conn.commit()
             logger.info(f"Table '{self.session_name}' has been deleted.")
         except sqlite3.Error as e:
@@ -249,7 +253,7 @@ class AgentInteractionMemory:
         if not contents:
             return {}
 
-        _, content = contents[0]
+        content = contents[0]["message"]
         if decision == "plot" and content.plot_input_dataframe:
             return content.plot_input_dataframe
         elif decision == "analyse" and content.analysis_input_dataframe:

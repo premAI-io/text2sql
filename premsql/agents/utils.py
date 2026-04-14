@@ -5,6 +5,7 @@ import pandas as pd
 from premsql.executors.from_langchain import SQLDatabase
 from premsql.logger import setup_console_logger
 from premsql.agents.models import AgentOutput, ExitWorkerOutput
+from premsql.security import UnsafeSQLQuery, enforce_read_only_sql
 
 logger = setup_console_logger("[PIPELINE-UTILS]")
 
@@ -16,11 +17,16 @@ def convert_df_to_dict(df: pd.DataFrame):
 def execute_and_render_result(
     db: SQLDatabase, sql: str, using: Literal["dataframe", "json"]
 ):
-    result = db.run_no_throw(command=sql, fetch="cursor")
+    try:
+        safe_sql = enforce_read_only_sql(sql)
+    except UnsafeSQLQuery as exc:
+        return _render_error(str(exc), sql, using)
+
+    result = db.run_no_throw(command=safe_sql, fetch="cursor")
 
     if isinstance(result, str):
-        return _render_error(result, sql, using)
-    return _render_data(result, sql, using)
+        return _render_error(result, safe_sql, using)
+    return _render_data(result, safe_sql, using)
 
 
 def _render_error(error: str, sql: str, using: str) -> Dict[str, Any]:

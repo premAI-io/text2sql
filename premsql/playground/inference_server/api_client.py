@@ -3,17 +3,22 @@ from urllib.parse import urljoin
 
 import requests
 
+from premsql.security import build_auth_headers
+
 
 class InferenceServerAPIError(Exception):
     pass
 
 
 class InferenceServerAPIClient:
-    def __init__(self, timeout: int = 600) -> None:
-        self.headers = {
+    def __init__(self, timeout: int = 120, api_token: Optional[str] = None) -> None:
+        self.headers = build_auth_headers(
+            {
             "accept": "application/json",
             "Content-Type": "application/json",
-        }
+            },
+            token=api_token,
+        )
         self.timeout = timeout
 
     def _make_request(
@@ -59,5 +64,5 @@ class InferenceServerAPIClient:
         return self._make_request(base_url, "GET", endpoint)
 
     def delete_session(self, base_url: str) -> Dict[str, Any]:
-        endpoint = "/delete_session/"
+        endpoint = "/session"
         return self._make_request(base_url, "DELETE", endpoint)

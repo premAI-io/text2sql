@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from typing import Any, Dict, Generator 
 from premsql.executors.base import BaseExecutor
 from premsql.logger import setup_console_logger
+from premsql.security import enforce_read_only_sql
 
 
 class OptimizedSQLiteExecutor(BaseExecutor):
@@ -31,15 +32,16 @@ class OptimizedSQLiteExecutor(BaseExecutor):
     def execute_sql(self, sql: str, dsn_or_db_path: str) -> Dict[str, Any]:
         start_time = time.time()
         try:
+            safe_sql = enforce_read_only_sql(sql)
             with self.get_connection(dsn_or_db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("EXPLAIN QUERY PLAN " + sql)
+                cursor.execute("EXPLAIN QUERY PLAN " + safe_sql)
                 query_plan = cursor.fetchall()
                 
                 if any("SCAN TABLE" in str(row) for row in query_plan):
                     self.logger.warn("Warning: Full table scan detected. Consider adding an index.")
                 
-                cursor.execute(sql)
+                cursor.execute(safe_sql)
                 result = [dict(row) for row in cursor.fetchall()]
                 error = None
         except sqlite3.Error as e:
@@ -98,7 +100,8 @@ class SQLiteExecutor(BaseExecutor):
 
         start_time = time.time()
         try:
-            cursor.execute(sql)
+            safe_sql = enforce_read_only_sql(sql)
+            cursor.execute(safe_sql)
             result = cursor.fetchall()
             error = None
         except Exception as e:

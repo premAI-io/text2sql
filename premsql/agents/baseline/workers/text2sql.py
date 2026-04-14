@@ -13,6 +13,11 @@ from premsql.agents.baseline.prompts import (
 )
 from premsql.agents.models import Text2SQLWorkerOutput
 from premsql.agents.utils import execute_and_render_result
+from premsql.security import (
+    SecurityValidationError,
+    ensure_expected_keys_only,
+    parse_structured_output,
+)
 
 logger = setup_console_logger("[BASELINE-TEXT2SQL-WORKER]")
 
@@ -27,6 +32,7 @@ class BaseLineText2SQLWorker(Text2SQLWorkerBase):
         include_tables: Optional[list] = None,
         exclude_tables: Optional[list] = None,
         auto_filter_tables: Optional[bool] = False,
+        allow_raw_sql: Optional[bool] = False,
     ):
         super().__init__(
             db_connection_uri=db_connection_uri,
@@ -39,6 +45,7 @@ class BaseLineText2SQLWorker(Text2SQLWorkerBase):
         self.corrector = helper_model
         self.table_filer_worker = helper_model
         self.auto_filter_tables = auto_filter_tables
+        self.allow_raw_sql = allow_raw_sql
 
     @staticmethod
     def show_dataframe(output: Text2SQLWorkerOutput):
@@ -64,7 +71,12 @@ class BaseLineText2SQLWorker(Text2SQLWorkerBase):
         try:
             to_include = []
             output = self.corrector.generate({"prompt": prompt}, postprocess=False)
-            output = eval(output)
+            output = ensure_expected_keys_only(
+                parse_structured_output(output, expected_keys={"include"}),
+                expected_keys={"include"},
+            )
+            if not isinstance(output["include"], list):
+                raise SecurityValidationError("Expected 'include' to be a list")
             for table in all_tables:
                 if table in output["include"]:
                     to_include.append(table)
@@ -154,25 +166,44 @@ class BaseLineText2SQLWorker(Text2SQLWorkerBase):
         **kwargs,
     ) -> Text2SQLWorkerOutput:
         if question.startswith("`") and question.endswith("`"):
+            if not self.allow_raw_sql:
+                return Text2SQLWorkerOutput(
+                    db_connection_uri=self.db_connection_uri,
+                    sql_string=None,
+                    sql_reasoning=None,
+                    input_dataframe=None,
+                    output_dataframe={"data": {}, "columns": []},
+                    question=question,
+                    error_from_model=(
+                        "Direct SQL execution is disabled. Use natural language prompts instead."
+                    ),
+                    additional_input={
+                        "additional_knowledge": additional_knowledge,
+                        "fewshot_dict": fewshot_dict,
+                        "temperature": temperature,
+                        "max_new_tokens": max_new_tokens,
+                        **kwargs,
+                    },
+                )
             result = execute_and_render_result(
-                db=self.db, sql=question.replace('`', ''), using=render_results_using
-            ) 
+                db=self.db, sql=question.replace("`", ""), using=render_results_using
+            )
             return Text2SQLWorkerOutput(
-            db_connection_uri=self.db_connection_uri,
-            sql_string=question.startswith("`"),
-            sql_reasoning=None,
-            input_dataframe=None,
-            output_dataframe=result["dataframe"],  # Truncating to
-            question=question,
-            error_from_model=result["error_from_model"],
-            additional_input={
-                "additional_knowledge": additional_knowledge,
-                "fewshot_dict": fewshot_dict,
-                "temperature": temperature,
-                "max_new_tokens": max_new_tokens,
-                **kwargs,
-            },
-        )
+                db_connection_uri=self.db_connection_uri,
+                sql_string=question.replace("`", ""),
+                sql_reasoning=None,
+                input_dataframe=None,
+                output_dataframe=result["dataframe"],
+                question=question,
+                error_from_model=result["error_from_model"],
+                additional_input={
+                    "additional_knowledge": additional_knowledge,
+                    "fewshot_dict": fewshot_dict,
+                    "temperature": temperature,
+                    "max_new_tokens": max_new_tokens,
+                    **kwargs,
+                },
+            )
 
 
         prompt = self._create_prompt(

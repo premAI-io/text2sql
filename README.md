@@ -131,7 +131,11 @@ plot = agent(
 You can launch the PremSQL Playground (as shown in the above video by adding these two additional lines after instantiating Agent)
 
 ```python
-agent_server = AgentServer(agent=agent, port={port})
+agent_server = AgentServer(
+    agent=agent,
+    port={port},
+    api_token=os.environ.get("PREMSQL_API_TOKEN")
+)
 agent_server.launch()
 ```
 
@@ -145,6 +149,24 @@ and on the second side of the terminal write:
 
 ```bash
 python start_agent.py
+```
+
+### Security Defaults
+
+Recent hardening changes added safer defaults for Playground and AgentServer deployments:
+
+- Playground session registration only accepts loopback AgentServer URLs such as `http://127.0.0.1:8100`.
+- API authentication is supported through `PREMSQL_API_TOKEN`. When this variable is set, the Django backend, Playground clients, and FastAPI AgentServer all expect the same token.
+- Generated SQL is now restricted to read-only queries. `INSERT`, `UPDATE`, `DELETE`, `DROP`, and similar statements are rejected by default.
+- Direct raw SQL passthrough using backtick-wrapped prompts is disabled by default.
+- CSV imports now enforce upload limits to reduce accidental or malicious resource exhaustion.
+
+Recommended local environment variables:
+
+```bash
+export PREMSQL_API_TOKEN="change-this-token"
+export PREMSQL_DJANGO_SECRET_KEY="change-this-secret"
+export PREMSQL_ALLOWED_HOSTS="127.0.0.1,localhost"
 ```
 
 ## 📦 Components Overview
@@ -447,13 +469,18 @@ In the above section you have see how we have defined our agent. You can deploy 
 
 ```python
 # File name: start_agent_server.py
+import os
 from premsql.playground import AgentServer
 from premsql.agents import BaseLineAgent
 
 # Define your agent as shown above:
 agent = BaseLineAgent(...)
 
-agent_server = AgentServer(agent=agent, port={port})
+agent_server = AgentServer(
+    agent=agent,
+    port={port},
+    api_token=os.environ.get("PREMSQL_API_TOKEN")
+)
 agent_server.launch()
 ```
 
@@ -463,7 +490,7 @@ Now inside another terminal write:
 python start_agent_server.py
 ```
 
-This can be any python file name. This will run a fastapi server. You need to paste the deployed url and paste it inside `Register New Session` part of the UI. Below shows, how the basic backend architecture looks like on how Playground communicates with the server.
+This can be any python file name. This will run a fastapi server. You need to paste a loopback url such as `http://127.0.0.1:8100` inside `Register New Session` in the UI. Below shows, how the basic backend architecture looks like on how Playground communicates with the server.
 
 ![](/assets/agent_server.png)
 
