@@ -46,10 +46,13 @@ class BaseExecutor(ABC):
 
         if is_match["result"] == 1:
             diff_list = [
+                # Bug fix: denominator must use predicted_sql, not gold_sql.
+                # The original code divided gold_time / gold_time (always 1.0),
+                # making VES meaningless. Correct formula: gold_time / predicted_time.
                 self.execute_sql(sql=gold_sql, dsn_or_db_path=dsn_or_db_path)[
                     "execution_time"
                 ]
-                / self.execute_sql(sql=gold_sql, dsn_or_db_path=dsn_or_db_path)[
+                / self.execute_sql(sql=predicted_sql, dsn_or_db_path=dsn_or_db_path)[
                     "execution_time"
                 ]
                 for _ in range(num_iterations)
